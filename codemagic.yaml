@@ -1,0 +1,62 @@
+workflows:
+  ios-build:
+    name: Juiceify iOS Build
+    max_build_duration: 120
+    instance_type: mac_mini_m1
+
+    environment:
+      node: 20.11.0
+      xcode: latest
+      cocoapods: default
+
+    scripts:
+      - name: Install dependencies
+        script: |
+          cd $CM_BUILD_DIR
+          npm install
+
+      - name: Expo prebuild
+        script: |
+          cd $CM_BUILD_DIR
+          echo "Node: $(node -v)"
+          echo "NPM: $(npm -v)"
+          echo "Expo CLI version:"
+          npx expo --version
+          echo "Running prebuild..."
+          npx expo prebuild --platform ios --clean --no-install 2>&1
+          echo "Prebuild exit code: $?"
+
+      - name: Install CocoaPods
+        script: |
+          cd $CM_BUILD_DIR/ios
+          pod install --repo-update
+
+      - name: Build iOS app
+        script: |
+          cd $CM_BUILD_DIR/ios
+          SCHEME=$(ls *.xcworkspace | sed 's/.xcworkspace//')
+          echo "Scheme: $SCHEME"
+          xcodebuild \
+            -workspace "$SCHEME.xcworkspace" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath $CM_BUILD_DIR/build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package IPA
+        script: |
+          mkdir -p $CM_EXPORT_DIR
+          APP_PATH=$(find $CM_BUILD_DIR/build -name "*.app" | head -1)
+          echo "App path: $APP_PATH"
+          mkdir -p /tmp/Payload
+          cp -r "$APP_PATH" /tmp/Payload/
+          cd /tmp && zip -r $CM_EXPORT_DIR/Juiceify.ipa Payload/
+          echo "Done"
+
+    artifacts:
+      - $CM_EXPORT_DIR/Juiceify.ipa
+      - $CM_BUILD_DIR/build/**/*.dSYM
